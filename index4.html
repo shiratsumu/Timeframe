@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>撮影時刻ごとの画像ログ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #929292;
+        }
+        h1 {
+            text-align: center;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .hour-labels {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .hour-label {
+            height: 40px;
+            display: flex;
+            align-items: center;
+        }
+        .image-container {
+            position: relative;
+            width: 50px;
+            margin-bottom: 10px;
+        }
+        .thumbnail {
+            position: absolute;
+            height: 18px;
+            margin: 0;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #333333;
+            padding: 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            white-space: nowrap;
+            visibility: hidden;
+            transform: translate(-50%, -150%);
+        }
+        .thumbnail:hover .tooltip {
+            visibility: visible;
+        }
+        .svg-download {
+            display: block;
+            width: 200px;
+            text-align: center;
+            margin: 20px auto;
+            padding: 10px;
+            background-color: #6c809560;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>TimeFrame</h1>
+
+    <div class="upload-area" id="upload-area">
+        <p>ここに画像をドラッグ＆ドロップしてください</p>
+        <input type="file" id="imageInput" accept="image/*" multiple>
+    </div>
+
+    <a id="download-svg" class="svg-download" href="#" download="image_log.svg">SVGをダウンロード</a>
+
+    <div style="display: flex;">
+        <div class="hour-labels" id="hour-labels"></div>
+        <div id="image-log"></div>
+    </div>
+
+    <div id="hover-time" class="hover-time"></div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const uploadArea = document.getElementById('upload-area');
+        const imageLog = document.getElementById('image-log');
+        const hourLabels = document.getElementById('hour-labels');
+        const downloadSvgButton = document.getElementById('download-svg');
+
+        const HOURS = 24;
+
+        // 時間ラベルを生成
+        // for (let i = 0; i < HOURS; i++) {
+        //     const hourLabel = document.createElement('div');
+        //     hourLabel.textContent = `${i}:00`;
+        //     hourLabel.className = 'hour-label';
+        //     hourLabels.appendChild(hourLabel);
+        // }
+
+        uploadArea.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            uploadArea.style.borderColor = '#007bff';
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.borderColor = '#ccc';
+        });
+
+        uploadArea.addEventListener('drop', (event) => {
+            event.preventDefault();
+            uploadArea.style.borderColor = '#ccc';
+            const files = event.dataTransfer.files;
+            handleFiles(files);
+        });
+
+        imageInput.addEventListener('change', (event) => {
+            const files = event.target.files;
+            handleFiles(files);
+        });
+
+        function handleFiles(files) {
+            const fileArray = Array.from(files);
+            fileArray.sort((a, b) => a.lastModified - b.lastModified);
+            fileArray.forEach(file => processImage(file));
+        }
+
+        function processImage(file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 1;
+                    canvas.height = 1;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, 1, 1);
+                    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+                    const color = `rgb(${r}, ${g}, ${b})`;
+                    const date = new Date(file.lastModified);
+                    addThumbnail(color, date);
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        const thumbnailsData = []; // サムネイルデータを全て格納する配列
+
+function addThumbnail(color, date) {
+    const hour = date.getHours();
+    const minute = date.getMinutes();
+    const second = date.getSeconds();
+    const timeString = `${hour}:${minute}:${second}`;
+
+    const containerId = `hour-${hour}`;
+    let hourContainer = document.getElementById(containerId);
+
+    if (!hourContainer) {
+        hourContainer = document.createElement('div');
+        hourContainer.className = 'image-container';
+        hourContainer.id = containerId;
+        imageLog.appendChild(hourContainer);
+    }
+
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'thumbnail';
+    thumbnail.style.backgroundColor = color;
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'tooltip';
+    tooltip.textContent = timeString;
+
+    thumbnail.appendChild(tooltip);
+    hourContainer.appendChild(thumbnail);
+
+    // サムネイルデータを保存
+    thumbnailsData.push({ color, date, hour });
+    sortThumbnails(hourContainer);
+    arrangeThumbnails(hourContainer);
+}
+
+function sortThumbnails(container) {
+    const thumbnails = Array.from(container.children);
+    thumbnails.sort((a, b) => {
+        const timeA = a.querySelector('.tooltip').textContent.split(':').map(Number);
+        const timeB = b.querySelector('.tooltip').textContent.split(':').map(Number);
+        if (timeA[1] === timeB[1]) {
+            return timeA[2] - timeB[2]; // 秒で比較
+        }
+        return timeA[1] - timeB[1]; // 分で比較
+    });
+    thumbnails.forEach(thumb => container.appendChild(thumb));
+}
+
+function arrangeThumbnails(container) {
+    const thumbnails = Array.from(container.children);
+    const totalWidth = 50; // 1時間分の幅
+    const thumbWidth = totalWidth / thumbnails.length; // サムネイルを均等に分割
+    const thumbHeight = 18; // サムネイルの高さ
+
+    thumbnails.forEach((thumb, index) => {
+        thumb.style.width = `${thumbWidth}px`;
+        thumb.style.height = `${thumbHeight}px`;
+        thumb.style.left = `${index * thumbWidth}px`;
+        thumb.style.top = '0';
+    });
+
+    container.style.position = 'relative';
+    container.style.width = `${totalWidth}px`;
+    container.style.height = `${thumbHeight}px`;
+}
+
+function generateSVG() {
+    // サムネイルデータを時系列順に完全ソート
+    thumbnailsData.sort((a, b) => a.date - b.date);
+
+    // 全体の日付（最初のサムネイルの日時を基準に）
+    const overallDate = thumbnailsData.length > 0
+        ? thumbnailsData[0].date.toDateString()
+        : 'No Date';
+
+    // 写真の総枚数
+    const totalPhotos = thumbnailsData.length;
+
+    const hoursMap = new Map(); // 時間ごとのデータを集計
+    thumbnailsData.forEach((thumb) => {
+        const hour = thumb.hour;
+        if (!hoursMap.has(hour)) {
+            hoursMap.set(hour, []);
+        }
+        hoursMap.get(hour).push(thumb);
+    });
+
+    // SVGの幅を計算 (1時間50pxの幅 * 時間の数)
+    const svgWidth = 50 * hoursMap.size; // 時間帯の数に基づいた幅
+    const thumbHeight = 20; // サムネイルの高さ
+    const rowHeight = 70; // 各時間帯の行の高さ（余裕を追加）
+
+    let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${rowHeight + 30}">`;
+
+    // 全体の日付と総枚数をSVGの上部に表示
+    svgContent += `<text x="10" y="20" font-size="14" fill="black">Date: ${overallDate}</text>`;
+    svgContent += `<text x="10" y="40" font-size="14" fill="black">Total Photos: ${totalPhotos}</text>`;
+
+    let x = 0; // 現在のX座標
+
+    [...hoursMap.keys()].sort((a, b) => a - b).forEach((hour) => {
+        const thumbnails = hoursMap.get(hour);
+        const thumbWidth = 50 / thumbnails.length; // 1時間分の幅を均等に分割
+
+        // 時間帯ごとの写真を描画
+        thumbnails.forEach((thumb, index) => {
+            const color = thumb.color;
+            const rectX = x + index * thumbWidth; // サムネイルのX位置
+            svgContent += `<rect x="${rectX}" y="60" width="${thumbWidth}" height="${thumbHeight}" fill="${color}" />`;
+        });
+
+        x += 50; // 次の時間帯へ
+    });
+
+    svgContent += '</svg>';
+    return svgContent;
+}
+
+downloadSvgButton.addEventListener('click', () => {
+    const svg = generateSVG();
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    downloadSvgButton.href = url;
+});
+</script>
+</body>
+</html>
